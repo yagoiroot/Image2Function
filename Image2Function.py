@@ -1,10 +1,15 @@
+import copy
+
 import numpy as np
 from PIL import Image
 import os
 import matplotlib.pyplot as plt
 import difflib
+import gplearn
 from gplearn.genetic import SymbolicRegressor
 from joblib import dump, load
+from sklearn.cluster import DBSCAN
+import sympy as sp
 
 scrip_dir = os.path.abspath(__file__)  # gets the BPL_code.py path
 proj_dir = scrip_dir.replace(r'\Image2Function.py', '')
@@ -85,6 +90,8 @@ def image_reader(input_image_location):
 
     input_image_location = file_checker(input_image_location, supported_extensions)
     img = Image.open(input_image_location).convert('L')
+
+    img_for_plot=plt.imread(input_image_location)
     # img.show()
     # print(img.size)
     # data = np.asarray(img.getdata()).reshape(img.size)
@@ -96,7 +103,7 @@ def image_reader(input_image_location):
     print(f"image_dim[0]: {image_dim[0]}")
     print(f"image_dim[1]: {image_dim[1]}") ##1
 
-    data[data > 110] = 255 #100 seems a functional cutoff for now.
+    data[data > 120] = 255 #100 seems a functional cutoff for now.
 
     # x_vals=np.zeros(image_dim[0])
     # y_vals=np.zeros(image_dim[1])
@@ -131,7 +138,7 @@ def image_reader(input_image_location):
     # plt.imshow(data, cmap='grey')
     # plt.show()
 
-    return [x_vals, y_vals, image_dim[0], image_dim[1]]
+    return [x_vals, y_vals, image_dim[0], image_dim[1], img_for_plot]
 
 def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path=None, use_saved=True):
     step1=image_reader(input_image_location)
@@ -139,14 +146,27 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
     y_vals=step1[1]
     img_x_domain=step1[2]
     img_y_range=step1[3]
+    img_for_plot=step1[4]
 
     x_vals=x_vals*(1/img_x_domain)
     y_vals=y_vals*(1/img_y_range)
 
+    x_vals_w_outliers=copy.deepcopy(x_vals)
+    y_vals_w_outliers=copy.deepcopy(y_vals)
+
+    # use DBSCAN to remove outliers
+    xy_vals=np.column_stack((x_vals,y_vals))
+    DB=DBSCAN(eps=0.01, min_samples=10).fit(xy_vals)
+    mask_inliers = (DB.labels_ != -1)
+    x_vals, y_vals = x_vals[mask_inliers], y_vals[mask_inliers]
+
+
     preds=genetic_fitter(x_vals, y_vals , x_domain, y_range, model_path, use_saved)
     x_vals_pred=preds[0]
     y_vals_pred=preds[1]
+    gp_prog=preds[2]
 
+    SymbRegg_to_latex(gp_prog)
 
     plt.rcParams.update({'font.size': 16})  # Set larger font size
     plt.rcParams["font.family"] = "Times New Roman"  # Use Times New Roman font
@@ -155,15 +175,17 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
 
     # Create a new figure with specified size
     plt.figure(
-        # figsize=(6, 7.2),  # Width and height in inches
+        figsize=(6, 6),  # Width and height in inches
         tight_layout=True,  # Automatically adjust subplot parameters for better fit
         dpi=200,  # Optional higher resolution for saving (commented out)
     )
 
     plt.gca().set_aspect('equal')
 
-    plt.plot(x_vals, y_vals, label='data')
-    plt.plot(x_vals_pred, y_vals_pred, label='prediction')
+    plt.imshow(img_for_plot, extent=[x_domain[0], x_domain[1], y_range[0], y_range[1]], cmap='gray', label='Image')
+    # plt.plot(x_vals_w_outliers, y_vals_w_outliers, label='data w/outliers', marker='o', markersize=3, linestyle='')
+    # plt.plot(x_vals, y_vals, label='data', marker='o', markersize=3, linestyle='')
+    plt.plot(x_vals_pred, y_vals_pred, label='Prediction', linestyle='--', color='tab:red')
 
     plt.xlim(x_domain)
     plt.ylim(y_range)
@@ -184,7 +206,7 @@ def genetic_fitter(x_vals, y_vals, x_domain=[0,1], y_range=[0,1], model_path=Non
     else:
         est_gp = SymbolicRegressor(
             population_size=1000,  # Number of candidate solutions in each generation
-            generations=20,  # How many iterations (generations) to evolve
+            generations=10,  # How many iterations (generations) to evolve
             tournament_size=20,  # Size of tournament for selecting individuals
             stopping_criteria=0.00001,  # Stop if error goes below this threshold
             const_range=(-1., 1.),  # Range for constant values in the expressions
@@ -204,17 +226,42 @@ def genetic_fitter(x_vals, y_vals, x_domain=[0,1], y_range=[0,1], model_path=Non
         #reshape the data for the genetic programming fit
         x_vals=x_vals.reshape(-1,1)
         est_gp.fit(x_vals, y_vals)
-        print("Best evolved expression:", est_gp._program)
 
         if model_path:
             dump(est_gp, model_path)
             print(f"Saved trained model to {model_path}")
 
-    x_vals_pred=np.linspace(x_domain[0],x_domain[1],1000)
+    print("Best evolved expression:", est_gp._program)
+    print(type(est_gp._program))
 
+    x_vals_pred=np.linspace(x_domain[0],x_domain[1],1000)
     y_vals_pred = est_gp.predict(x_vals_pred.reshape(-1,1))
 
-    return [x_vals_pred,y_vals_pred]
+    return [x_vals_pred,y_vals_pred, est_gp._program]
+
+def SymbRegg_to_latex(gp_prog):
+    if type(gp_prog) != gplearn._program._Program:
+        raise TypeError("Input must be a gplearn._program._Program object.")
+    expr_str = str(gp_prog)
+    X0, X1, X2 = sp.symbols('x0 x1 x2')
+
+    # 4. Map gplearn functions and terminals to Sympy
+    locals_dict = {
+        'add': sp.Add,
+        'mul': sp.Mul,
+        'sub': lambda x, y: x - y,
+        'div': lambda x, y: x / y,
+        'sqrt': sp.sqrt,
+        'log': sp.log,
+        'x0': X0, 'x1': X1, 'x2': X2
+    }
+
+    # 5. Parse and convert to LaTeX
+    sympy_expr = sp.sympify(expr_str, locals=locals_dict)
+    latex_str = sp.latex(sympy_expr)
+
+    print("LaTeX form:", latex_str)
+    return latex_str
 
 image_location=r"function_x.png"
-image_fitter(image_location, model_path='test1.joblib', use_saved=False)
+image_fitter(image_location, use_saved=True)

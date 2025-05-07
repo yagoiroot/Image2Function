@@ -94,7 +94,7 @@ def image_reader(input_image_location):
     if image_dim[0] != image_dim[1]:
         raise ValueError("Image must be square.")
     print(f"image_dim[0]: {image_dim[0]}")
-    print(f"image_dim[1]: {image_dim[1]}") ##
+    print(f"image_dim[1]: {image_dim[1]}") ##1
 
     data[data > 110] = 255 #100 seems a functional cutoff for now.
 

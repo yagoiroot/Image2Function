@@ -162,6 +162,20 @@ def image_reader(input_image_location):
 
 def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path=None,
                  use_saved=True, intd_expr=None):
+    """
+    Processes an input image to extract data, fit a function to the data,
+    and visualize the result with optional interpretation of a provided
+    intended symbolic expression. The data is adjusted based on user-defined
+    domains and ranges, outliers are removed, and a fitting model is applied.
+
+    :param input_image_location: Path to the input image file.
+    :param x_domain: Domain of the x-axis for scaling extracted data. Defaults to [0,1].
+    :param y_range: Range of the y-axis for scaling extracted data. Defaults to [0,1].
+    :param model_path: Path to a pre-trained model for genetic programming or None if not used.
+    :param use_saved: Flag to indicate whether to use a saved model. Defaults to True.
+    :param intd_expr: String representation of the intended expression (if available).
+    :return: None
+    """
     step1=image_reader(input_image_location)
     x_vals=step1[0]
     y_vals=step1[1]
@@ -344,7 +358,7 @@ def SymbRegg_to_latex(gp_prog):
     print("LaTeX form:", latex_str)
     return latex_str
 
-def Latex_to_function(latex_string, x_domain, y_range):
+def Latex_to_function(latex_string, x_domain):
     """
     Converts a LaTeX string representation of a mathematical expression into a numerical
     function, evaluates it over a specified range of x-values, and returns the evaluated
@@ -360,9 +374,7 @@ def Latex_to_function(latex_string, x_domain, y_range):
     :param x_domain: A tuple specifying the start and end values of the x-domain
         over which the function should be evaluated (inclusive).
     :type x_domain: Tuple[float, float]
-    :param y_range: An optional tuple specifying the lower and upper bounds for the
-        y-values. If None, no bounding is applied. Defaults to None.
-    :type y_range: Optional[Tuple[float, float]]
+
     :return: A list containing two elements - the first being an array of
         x-values evaluated over the specified domain, and the second being an
         array of the corresponding y-values.

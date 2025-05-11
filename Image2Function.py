@@ -14,6 +14,7 @@ from sympy.parsing.latex import parse_latex
 
 scrip_dir = os.path.abspath(__file__)  # gets the BPL_code.py path
 proj_dir = scrip_dir.replace(r'\Image2Function.py', '')
+print(f"proj_dir: {proj_dir}")
 
 
 # requires antlr4-python3-runtime version 4.11.0
@@ -123,7 +124,19 @@ def image_reader(input_image_location):
     print(f"image_dim[0]: {image_dim[0]}")
     print(f"image_dim[1]: {image_dim[1]}") ##1
 
+    # if the image is mostly black (i.e. a chalk drawing on a black board),
+    # invert the black and white
+    print(f'mean: {np.mean(data)}')
+    if np.mean(data)<(255/2):
+        # data=np.abs(data-255)
+        data=np.absolute(255-data)
+
+    # plt.imshow(data, cmap='grey')
+    # plt.show()
+
     data[data > 120] = 255 #100 seems a functional cutoff for now.
+    # plt.imshow(data, cmap='grey')
+    # plt.show()
 
     # x_vals=np.zeros(image_dim[0])
     # y_vals=np.zeros(image_dim[1])
@@ -155,6 +168,8 @@ def image_reader(input_image_location):
     y_vals=np.array(y_vals)
     mirror_axis = image_dim[1]/2
     y_vals=2*mirror_axis-y_vals
+
+    # data_test=np.abs(data-255)
     # plt.imshow(data, cmap='grey')
     # plt.show()
 
@@ -193,9 +208,16 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
 
     # use DBSCAN to remove outliers
     xy_vals=np.column_stack((x_vals,y_vals))
-    eps=abs(x_domain[1]-x_domain[0])/100
+    eps=np.abs(x_domain[1]-x_domain[0])/100
     DB=DBSCAN(eps=eps, min_samples=10).fit(xy_vals)
-    mask_inliers = (DB.labels_ != -1)
+
+    labels, counts = np.unique(DB.labels_, return_counts=True)
+    #if DBSCAN finds more than one cluster, choose the one with the most data points
+    max_counts=np.max(counts)
+    label_of_max_count=labels[list(counts).index(max_counts)]
+    mask_inliers = (DB.labels_ == label_of_max_count)
+    print(f'label_of_max_count: {label_of_max_count}')
+    print(f'labels: {np.unique(DB.labels_, return_counts=True)}')
     x_vals, y_vals = x_vals[mask_inliers], y_vals[mask_inliers]
 
     #handle the case that the attempt to remove outlier with DBSCAN actually removed all the data
@@ -203,7 +225,6 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
         print("OOPS! DBSCAN removed all the data. Using the original data instead.")
         x_vals=x_vals_w_outliers
         y_vals=y_vals_w_outliers
-
 
     preds=genetic_fitter(x_vals, y_vals , x_domain, y_range, model_path, use_saved)
     x_vals_pred=preds[0]
@@ -213,7 +234,7 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
     latex_str=SymbRegg_to_latex(gp_prog)
 
     if type(intd_expr)==str:
-        step2=Latex_to_function(intd_expr, x_domain, y_range)
+        step2=Latex_to_function(intd_expr, x_domain)
         x_vals_intd=step2[0]
         y_vals_intd=step2[1]
 
@@ -232,8 +253,8 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
     plt.gca().set_aspect('equal')
 
     plt.imshow(img_for_plot, extent=[x_domain[0], x_domain[1], y_range[0], y_range[1]], cmap='gray', label='Image')
-    # plt.plot(x_vals_w_outliers, y_vals_w_outliers, label='data w/outliers', marker='o', markersize=3, linestyle='')
-    # plt.plot(x_vals, y_vals, label='data', marker='o', markersize=1, linestyle='')
+    plt.plot(x_vals_w_outliers, y_vals_w_outliers, label='data w/outliers', marker='o', markersize=3, linestyle='')
+    plt.plot(x_vals, y_vals, label='data', marker='o', markersize=1, linestyle='')
     plt.plot(x_vals_pred, y_vals_pred, label=f'Prediction: ${latex_str}$', linestyle='--',
              color='tab:red', linewidth=2)
     if type(intd_expr)==str:
@@ -273,7 +294,7 @@ def genetic_fitter(x_vals, y_vals, x_domain=[0,1], y_range=[0,1], model_path=Non
     if model_path==None:
         model_path=default_model_path
     else:
-        model_path=proj_dir+model_path
+        model_path=proj_dir+r"\\"+model_path
 
     if use_saved and model_path and os.path.isfile(model_path):
         est_gp = load(model_path)
@@ -388,6 +409,8 @@ def Latex_to_function(latex_string, x_domain):
 
     return [x_values, y_values]
 
-# image_location=r"function_x.png"
-image_location=r"function_x^{.5}.png"
-image_fitter(image_location, model_path='x^{.5}_moded.joblib', use_saved=False, x_domain=[0,10], y_range=[0,10], intd_expr='\sqrt{x}')
+image_location=r"function_x.png"
+# image_location=r"function_x^{.5}_inverted.png"
+# image_location=r"function_x^{.5}.png"
+image_fitter(image_location, model_path='x_model.joblib', use_saved=True, x_domain=[0,10], y_range=[0,10])
+# image_reader(image_location)

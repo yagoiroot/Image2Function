@@ -145,7 +145,7 @@ This example uses a plot of the square root function y = √x. The curved plot i
 **Fitted Function Plot:**  
 <img src="function_x^{.5}_fitted_plot_best.png" alt="Fitted plot of f(x) = \sqrt{x}" style="width:50%; height:auto;">
 
-The fitted curve (red dashed line) closely follows the drawn points for y = √x (blue). The symbolic regression yields the formula `\sqrt{x}`, successfully recovering the intended function.
+The fitted curve (red dashed line) closely follows the drawn points for y = √x (blue). The symbolic regression yields the formula `\sqrt{x-0.082}`, which is very near the intended function.
 ## API Reference
 
 ### `file_checker(file_name, file_type)`

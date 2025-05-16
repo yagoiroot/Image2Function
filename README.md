@@ -119,7 +119,33 @@ latex_str = SymbRegg_to_latex(gp_program)
 from Image2Function import Latex_to_function
 x_vals, y_vals = Latex_to_function(r"\frac{\sin(x)}{x}", x_domain=[0, 10])
 ```
+## Examples
 
+This section demonstrates the toolkit on two sample plots: a straight line (y = x) and a square-root curve (y = √x). In each case, the goal is to recover the underlying function from the plot image.
+
+### Example 1: Linear Function (f(x) = x)
+
+A hand-drawn plot of the linear function y = x is provided as the input. The `image_fitter` processes this image to extract its pixel coordinates and perform symbolic regression to fit a function.
+
+**Input Plot:**  
+<img src="function_x.png" alt="Hand-drawn plot of f(x) = x" style="width:40%; height:auto;">
+
+**Fitted Function Plot:**  
+<img src="function_x_fitted_plot_clean.png" alt="fitted plot of f(x) = x" style="width:50%; height:auto;">
+
+The fitted result (red dashed line) overlaps closely with the original drawn line (blue points/line). The symbolic regression returns the formula `x`, which matches the intended linear function.
+
+### Example 2: Square Root Function (f(x) = √x)
+
+This example uses a plot of the square root function y = √x. The curved plot is fed into the `image_fitter` to test the algorithm’s ability to handle a non-linear shape.
+
+**Input Plot:**  
+<img src="function_x^{.5}.png" alt="Hand-drawn plot of f(x) = \sqrt{x}" style="width:40%; height:auto;">
+
+**Fitted Function Plot:**  
+<img src="function_x^{.5}_fitted_plot_best.png" alt="Fitted plot of f(x) = \sqrt{x}" style="width:50%; height:auto;">
+
+The fitted curve (red dashed line) closely follows the drawn points for y = √x (blue). The symbolic regression yields the formula `\sqrt{x}`, successfully recovering the intended function.
 ## API Reference
 
 ### `file_checker(file_name, file_type)`

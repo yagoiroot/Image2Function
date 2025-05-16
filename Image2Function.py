@@ -1,5 +1,4 @@
 import copy
-
 import numpy as np
 from PIL import Image
 import os
@@ -24,20 +23,22 @@ print(f"proj_dir: {proj_dir}")
 
 def file_checker(file_name, file_type):
     """
-    As opposed to file_checker(), this sunction searches through the full BPL Lab directory structure to try and find
-    the specified file.
-    Args:
-        file_name: str, full file path of the desired file.
-                    OR
-                    name of the file without file extension, if the file is in the project directory.
-        file_type: str, the type of file to be searched, can include the '.' so '.csv' or 'csv' are both valid.
-                    OR
-                    A list of file types to be searched.
+    This function verifies the existence of a given file name and its type within the project's structure. It can identify
+    files based on their complete paths or search through the entire project directory for a match when only the file name
+    and its type are provided. If no exact match is found, it suggests the closest potential match or raises an error if no
+    similar files exist.
 
-    Returns:
-        The full file path of the desired file, if it exists. If the file cannot be found then an error will be raised
-        with suggestions if a similar file name is found.
-
+    :param file_name: The name of the file to be checked. It could be the complete file path or just the name
+        without the path.
+    :type file_name: str
+    :param file_type: The expected file type(s) to filter files during the search process. This can be a single
+        string representing the file extension, or a list of strings for multiple possible types.
+    :type file_type: Union[str, list]
+    :return: The full path of the found file if it matches the provided file name and file type.
+    :rtype: str
+    :raises FileNotFoundError: If the specified file is not found within the project directory. If the file name is not
+        directly matched, a suggestion for the closest match is provided, or the error is raised indicating no similar
+        files were found.
     """
     scrip_dir = os.path.abspath(__file__)  # gets the BPL_code.py path
     proj_dir = scrip_dir.replace(r'\Event-Camera-Code\BPL_code.py','') #gets top level folder of the project
@@ -105,54 +106,48 @@ def image_reader(input_image_location):
     :rtype: list
     :raises ValueError: If the image is not square.
     """
+    # handles different image extensions.
     exts = Image.registered_extensions()
     supported_extensions = [ex for ex, f in exts.items() if f in Image.OPEN]
 
+    # gets the specified input image as an array of greyscale values.
     input_image_location = file_checker(input_image_location, supported_extensions)
     img = Image.open(input_image_location).convert('L')
 
+    # creates an image object for plotting latter.
     img_for_plot=plt.imread(input_image_location)
-    # img.show()
-    # print(img.size)
-    # data = np.asarray(img.getdata()).reshape(img.size)
+
+    #acually makes the array.
     data = np.array(img)
     print(data)
 
     image_dim=data.shape
     if image_dim[0] != image_dim[1]:
         raise ValueError("Image must be square.")
-    print(f"image_dim[0]: {image_dim[0]}")
-    print(f"image_dim[1]: {image_dim[1]}") ##1
+    # print(f"image_dim[0]: {image_dim[0]}")
+    # print(f"image_dim[1]: {image_dim[1]}")
 
     # if the image is mostly black (i.e. a chalk drawing on a black board),
     # invert the black and white
-    print(f'mean: {np.mean(data)}')
+    # print(f'mean: {np.mean(data)}')
     if np.mean(data)<(255/2):
         # data=np.abs(data-255)
         data=np.absolute(255-data)
 
-    # plt.imshow(data, cmap='grey')
-    # plt.show()
+    #shift all the points in the array that are not a solid black line to white.
+    data[data > 120] = 255 #120 seems to work in many cases, may need to be modified for some use cases.
 
-    data[data > 120] = 255 #100 seems a functional cutoff for now.
-    # plt.imshow(data, cmap='grey')
-    # plt.show()
-
-    # x_vals=np.zeros(image_dim[0])
-    # y_vals=np.zeros(image_dim[1])
-    # x_vals=[0 for x in range(image_dim[0]) ]
-    # y_vals=[0 for y in range(image_dim[1]) ]
+    # moved the points from the 2D array to list of x and y values.
     x_vals=[]
     y_vals=[]
-
     for x in range(image_dim[0]):
         for y in range(image_dim[1]):
             if data[y,x] < 255 :
                 x_vals.append(x)
-                # x_vals[x]=x
                 y_vals.append(y)
-                # y_vals[y]=y
 
+    #ensure dimensionality to original image is keep even if the drawn plot does not
+    # extend through full domain or range.
     if len(x_vals)!= image_dim[0]:
         for i in range(image_dim[0]-len(x_vals)):
             x_vals.append(None)
@@ -161,54 +156,78 @@ def image_reader(input_image_location):
             y_vals.append(None)
     # print(f'x_vals: {x_vals}')
     # print(f'y_vals: {y_vals}')
-    print(len(x_vals))
-    print(len(y_vals))
-    # y_vals=y_vals[::-1]
+    # print(len(x_vals))
+    # print(len(y_vals))
+
+    #convert from lists to arrays.
     x_vals=np.array(x_vals)
     y_vals=np.array(y_vals)
+
+    #Flip the data to move the origin to the bottom left corner.
     mirror_axis = image_dim[1]/2
     y_vals=2*mirror_axis-y_vals
-
-    # data_test=np.abs(data-255)
-    # plt.imshow(data, cmap='grey')
-    # plt.show()
 
     return [x_vals, y_vals, image_dim[0], image_dim[1], img_for_plot]
 
 def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path=None,
-                 use_saved=True, intd_expr=None):
+                 use_saved=True, intd_expr=None, show_clusters=False, show_cluster_outliers=False,
+                 show_image=True):
     """
-    Processes an input image to extract data, fit a function to the data,
-    and visualize the result with optional interpretation of a provided
-    intended symbolic expression. The data is adjusted based on user-defined
-    domains and ranges, outliers are removed, and a fitting model is applied.
+    Performs image-based symbolic regression to fit a mathematical model to the input image data
+    by removing outliers, performing clustering, and applying genetic programming techniques.
 
-    :param input_image_location: Path to the input image file.
-    :param x_domain: Domain of the x-axis for scaling extracted data. Defaults to [0,1].
-    :param y_range: Range of the y-axis for scaling extracted data. Defaults to [0,1].
-    :param model_path: Path to a pre-trained model for genetic programming or None if not used.
-    :param use_saved: Flag to indicate whether to use a saved model. Defaults to True.
-    :param intd_expr: String representation of the intended expression (if available).
+    :param input_image_location: Path to the input image file to be analyzed.
+            #The image must be square.
+    :type input_image_location: str
+    :param x_domain: Domain range of the x-axis for scaling the input data,
+        specified as a two-element list [x_min, x_max]. Default is [0,1].
+    :type x_domain: list
+    :param y_range: Domain range of the y-axis for scaling the input data,
+        specified as a two-element list [y_min, y_max]. Default is [0,1].
+    :type y_range: list
+    :param model_path: Path to the folder or file for saving/loading models used for fitting.
+        If None, no saving/loading is performed. Default is None.
+    :type model_path: str or None
+    :param use_saved: Boolean indicating whether to use a pre-saved model for the fitting process
+        (if available) or perform fitting from scratch. Default is True.
+    :type use_saved: bool
+    :param intd_expr: Desired mathematical expression for the intended function as a string.
+        If provided, the intended function will be plotted for comparison. Default is None.
+    :type intd_expr: str or None
+    :param show_clusters: Boolean indicating whether to plot clustered data after filtering out
+        outliers. Default is False.
+    :type show_clusters: bool
+    :param show_cluster_outliers: Boolean indicating whether to plot clustered data with
+        visible outliers. Default is False.
+    :type show_cluster_outliers: bool
+    :param show_image: Boolean indicating whether to display the input grayscale image
+        in the plot. Default is True.
+    :type show_image: bool
     :return: None
     """
+    # read the image file.
     step1=image_reader(input_image_location)
-    x_vals=step1[0]
-    y_vals=step1[1]
-    img_x_domain=step1[2]
-    img_y_range=step1[3]
-    img_for_plot=step1[4]
+    # step1 := [x_vals, y_vals, image_dim[0], image_dim[1], img_for_plot]
+    x_vals=step1[0] # x coords, based on resolution of input image, will be rescaled later.
+    y_vals=step1[1] # y coords, based on resolution of input image, will be rescaled late
+    img_x_domain=step1[2] # x resolution size of image
+    img_y_range=step1[3] # y resolution sizeof image
+    img_for_plot=step1[4] # object for plotting the image latter.
 
+    # rescales the domain and range to the given inputs.
     x_vals=abs(x_domain[1]-x_domain[0])*x_vals*(1/img_x_domain)
     y_vals=abs(y_range[1]-y_range[0])*y_vals*(1/img_y_range)
-    print(f"x_vals: {x_vals}")
-    print(f"y_vals: {y_vals}")
+    # print(f"x_vals: {x_vals}")
+    # print(f"y_vals: {y_vals}")
 
+    # deep copy of coords, may include any outliers that survived the initial image processing.
     x_vals_w_outliers=copy.deepcopy(x_vals)
     y_vals_w_outliers=copy.deepcopy(y_vals)
 
     # use DBSCAN to remove outliers
     xy_vals=np.column_stack((x_vals,y_vals))
     eps=np.abs(x_domain[1]-x_domain[0])/100
+    #chooses an eps value that is scaled to the chosen domain and range, spefically 1/100th of the domain.
     DB=DBSCAN(eps=eps, min_samples=10).fit(xy_vals)
 
     labels, counts = np.unique(DB.labels_, return_counts=True)
@@ -216,28 +235,31 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
     max_counts=np.max(counts)
     label_of_max_count=labels[list(counts).index(max_counts)]
     mask_inliers = (DB.labels_ == label_of_max_count)
-    print(f'label_of_max_count: {label_of_max_count}')
-    print(f'labels: {np.unique(DB.labels_, return_counts=True)}')
+    # print(f'label_of_max_count: {label_of_max_count}')
+    # print(f'labels: {np.unique(DB.labels_, return_counts=True)}')
     x_vals, y_vals = x_vals[mask_inliers], y_vals[mask_inliers]
 
-    #handle the case that the attempt to remove outlier with DBSCAN actually removed all the data
+    #handle the case that the attempt to remove outliers with DBSCAN actually removed all the data
     if x_vals.size==0 or y_vals.size==0:
         print("OOPS! DBSCAN removed all the data. Using the original data instead.")
         x_vals=x_vals_w_outliers
         y_vals=y_vals_w_outliers
 
+    # performs a symbolic reggression fit to the data.
     preds=genetic_fitter(x_vals, y_vals , x_domain, y_range, model_path, use_saved)
     x_vals_pred=preds[0]
     y_vals_pred=preds[1]
-    gp_prog=preds[2]
+    gp_prog=preds[2] # object that holds the fitted model
 
-    latex_str=SymbRegg_to_latex(gp_prog)
+    latex_str=SymbRegg_to_latex(gp_prog) # gets the fitted model as a latex formatted string.
 
+    # if an intended function is given, turn the latex strin into an executable function and generate data.
     if type(intd_expr)==str:
         step2=Latex_to_function(intd_expr, x_domain)
         x_vals_intd=step2[0]
         y_vals_intd=step2[1]
 
+    #Begin Plotting.
     plt.rcParams.update({'font.size': 16})  # Set larger font size
     plt.rcParams["font.family"] = "Times New Roman"  # Use Times New Roman font
     plt.rcParams['mathtext.fontset'] = 'stix'
@@ -252,21 +274,29 @@ def image_fitter(input_image_location, x_domain=[0,1], y_range=[0,1], model_path
 
     plt.gca().set_aspect('equal')
 
-    plt.imshow(img_for_plot, extent=[x_domain[0], x_domain[1], y_range[0], y_range[1]], cmap='gray', label='Image')
-    plt.plot(x_vals_w_outliers, y_vals_w_outliers, label='data w/outliers', marker='o', markersize=3, linestyle='')
-    plt.plot(x_vals, y_vals, label='data', marker='o', markersize=1, linestyle='')
-    plt.plot(x_vals_pred, y_vals_pred, label=f'Prediction: ${latex_str}$', linestyle='--',
+    if show_image==True:
+        plt.imshow(img_for_plot, extent=[x_domain[0], x_domain[1], y_range[0],
+                                         y_range[1]], cmap='gray', label='Image')
+    if show_cluster_outliers==True:
+        plt.plot(x_vals_w_outliers, y_vals_w_outliers, label='data w/outliers',
+                 marker='o', markersize=3, linestyle='', color='tab:blue')
+    if show_clusters==True:
+        plt.plot(x_vals, y_vals, label='data', marker='o', markersize=1, linestyle='',
+                 color='tab:orange')
+    plt.plot(x_vals_pred, y_vals_pred,
+             label=f'Prediction: \n ${latex_str}$',
+             linestyle='--', zorder=3,
              color='tab:red', linewidth=2)
     if type(intd_expr)==str:
         plt.plot(x_vals_intd, y_vals_intd, label=f'Intended Function: ${intd_expr}$', linestyle='-',
-                 color='deepskyblue', linewidth=2)
+                 color='deepskyblue', linewidth=2, zorder=1)
 
     plt.xlim(x_domain)
     plt.ylim(y_range)
     plt.xlabel('$x$')
     plt.ylabel('$y$')
     plt.title(f'Drawn Plot & Fitted Function')
-    plt.legend()
+    plt.legend(fontsize=11)
     plt.grid()
     plt.show()
 
@@ -276,6 +306,9 @@ def genetic_fitter(x_vals, y_vals, x_domain=[0,1], y_range=[0,1], model_path=Non
     Performs symbolic regression using a genetic programming approach to fit a given set
     of x and y values. Optionally loads a saved model if available or trains a new model
     and saves it. The method also returns a prediction based on the evolved expression.
+
+    The parameters of SymbolicRegressor are left as hardcoded values, but they may need to be changed
+    to fit the needs of the user.
 
     :param x_vals: Array-like object containing input feature data to be fitted.
     :param y_vals: Array-like object containing target values corresponding to x_vals.
@@ -305,10 +338,11 @@ def genetic_fitter(x_vals, y_vals, x_domain=[0,1], y_range=[0,1], model_path=Non
             generations=20,  # How many iterations (generations) to evolve
             tournament_size=20,  # Size of tournament for selecting individuals
             stopping_criteria=0.00001,  # Stop if error goes below this threshold
-            const_range=(-1., 1.),  # Range for constant values in the expressions
+            const_range=(-100., 100.),  # Range for constant values in the expressions
             init_depth=(2, 6),  # Range for initial tree depths
             init_method='half and half',  # Method for generating the initial population
-            function_set=['add', 'sub', 'mul', 'div', 'sqrt'],  # Operators to use in expressions
+            function_set=['add', 'sub', 'mul', 'div', 'sqrt','sin', 'cos', 'tan'],  # Operators to use in expressions
+                        #additional ones may need to be added for some use cases.
             metric='mean absolute error',  # Metric to optimize
             p_crossover=0.7,  # Crossover probability
             p_subtree_mutation=0.1,  # Subtree mutation probability
@@ -316,7 +350,8 @@ def genetic_fitter(x_vals, y_vals, x_domain=[0,1], y_range=[0,1], model_path=Non
             p_point_mutation=0.1,  # Point mutation probability
             verbose=1,  # Print progress during evolution
             parsimony_coefficient=0.02,  # Penalize overly complex expressions
-            random_state=0  # For reproducibility
+            random_state=0,  # For reproducibility
+            n_jobs=-1 #selects the number of cores to use for parallel processing. -1 uses all available cores.
         )
 
         #reshape the data for the genetic programming fit
@@ -361,6 +396,7 @@ def SymbRegg_to_latex(gp_prog):
     x= sp.symbols('x')
 
     # Map gplearn functions and terminals to Sympy
+    # Any addition operators added to genetic_fitter() will need to be added here as well.
     locals_dict = {
         'add': sp.Add,
         'mul': sp.Mul,
@@ -369,6 +405,9 @@ def SymbRegg_to_latex(gp_prog):
         'sqrt': sp.sqrt,
         'log': sp.log,
         'X0': x,
+        'sin': sp.sin,
+        'cos': sp.cos,
+        'tan': sp.tan,
         # 'x1': X1, 'x2': X2
     }
 
@@ -412,5 +451,6 @@ def Latex_to_function(latex_string, x_domain):
 image_location=r"function_x.png"
 # image_location=r"function_x^{.5}_inverted.png"
 # image_location=r"function_x^{.5}.png"
-image_fitter(image_location, model_path='x_model.joblib', use_saved=True, x_domain=[0,10], y_range=[0,10])
+image_fitter(image_location, model_path='function_x_model.joblib', use_saved=True, intd_expr='x',
+             x_domain=[0,1], y_range=[0,1], show_cluster_outliers=True, show_clusters=False)
 # image_reader(image_location)
